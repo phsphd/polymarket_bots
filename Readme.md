@@ -1,226 +1,371 @@
-# Polymarket Copy Trader
+# Polymarket Trading Bots
 
-Copy the top traders on Polymarket — automatically.
+Three standalone trading bots for [Polymarket](https://polymarket.com) prediction
+markets. Each is a single binary — no Python, no Node, no Docker. Just download,
+configure, and run.
 
-This bot scans the Polymarket leaderboard, identifies the highest-performing
-traders, and mirrors their trades on your account. No AI, no complex strategies —
-just follow the people who are actually winning.
+| Bot | What it does | Needs LLM? | Binary |
+|---|---|---|---|
+| [Copy Trader](#copy-trader) | Follow top Polymarket traders automatically | No | 11 MB |
+| [BTC Predictor](#btc-predictor) | ML-powered BTC direction prediction | No (optional) | 7.5 MB* |
+| [Topic Bet](#topic-bet) | Bet on any topic using LLM analysis | Yes | 11 MB |
 
----
-
-## How It Works
-
-```
-Polymarket Leaderboard
-        │
-        ▼
-  Top 100 traders ranked by profit
-        │
-        ▼
-  Auto-select top 10 by all-time P&L
-        │
-        ▼
-  Monitor their trades every 60 seconds
-        │
-        ▼
-  Copy each trade at your configured size ($10 default)
-        │
-        ▼
-  Track P&L as markets resolve
-        │
-        ▼
-  Dashboard at http://localhost:8080
-```
+*BTC Predictor is Python-based with pre-trained models included.
 
 ---
 
-## Which Version Do I Need?
+## Copy Trader
 
-| | **Trader Edition** | **Viewer Edition** |
+Automatically copies trades from the top-performing Polymarket traders.
+Scans the leaderboard daily, identifies the best traders by profit, and
+mirrors their positions.
+
+### How it works
+
+```
+Polymarket Leaderboard (top 100 by PnL)
+         |
+   Auto-select top 10 traders
+         |
+   Monitor their trades every 60s
+         |
+   Copy each trade at your size ($10 default)
+         |
+   Track P&L as markets resolve
+         |
+   Dashboard at http://localhost:8080
+```
+
+### Two editions
+
+| | Trader Edition | Viewer Edition |
 |---|---|---|
-| **For** | Canadian & European users | US users |
-| **Can trade?** | Yes — real orders on Polymarket | No — paper trading only |
-| **Needs API key?** | Yes — your own Polymarket key | No |
-| **Leaderboard** | Scans directly from Polymarket | Syncs from shared database |
-| **Dashboard** | Yes | Yes |
-| **File** | `polymarket-trader.exe` | `polymarket-us.exe` |
+| For | Canadian / European users | US users |
+| Trades? | Yes (with your Polymarket API key) | No (paper trading only) |
+| API key? | Yes (yours) | No |
+| File | `polymarket-trader.exe` | `polymarket-us.exe` |
 
-> **US users**: Polymarket Global is geo-restricted in the US. The Viewer
-> Edition lets you see what top traders are doing and track simulated P&L,
-> but cannot place real orders.
+> US users: Polymarket Global is geo-restricted. The Viewer Edition shows
+> what top traders are doing with simulated P&L tracking.
 
----
+### Quick start (Trader Edition)
 
-## Trader Edition (Canada / Europe)
+```bash
+# 1. Edit .env — add your Polymarket API key
+# 2. Run
+polymarket-trader.exe -mode=trader
+# 3. Dashboard: http://localhost:8080
+```
 
-Full copy trading bot. Scans the leaderboard, follows top traders, and places
-real orders on your Polymarket account.
+### Quick start (Viewer Edition)
 
-### Setup
+```bash
+# Just run — no API key needed
+polymarket-us.exe -mode=us
+# Dashboard: http://localhost:8080
+```
 
-1. Download `polymarket-trader.exe` and `.env`
-2. Get your API key from [polymarket.com](https://polymarket.com) → Settings → API Keys
-3. Edit `.env`:
+### Commands
 
-```ini
-POLY_API_KEY=your-api-key
+```
+polymarket-trader.exe -mode=trader                  Start trading + dashboard
+polymarket-trader.exe -mode=trader -once             One cycle then exit
+polymarket-trader.exe -mode=trader -leaderboard-scan Scan leaderboard
+polymarket-trader.exe -mode=trader -status           Show status
+
+polymarket-us.exe -mode=us                          Start viewer + dashboard
+polymarket-us.exe -mode=us -status                  Show status
+```
+
+### Configuration
+
+```env
+# Trader Edition only
+POLY_API_KEY=your-polymarket-api-key
 POLY_API_SECRET=your-api-secret
 POLY_PASSPHRASE=your-passphrase
 
-DRY_RUN=true          # Paper trade first!
-COPY_SIZE_USD=10      # $ per trade
-COPY_MAX_DAILY_USD=500
+# Both editions
+DRY_RUN=true                    # Paper trade first!
+COPY_SIZE_USD=10                # $ per copy trade
+COPY_MAX_DAILY_USD=500          # Daily cap
+LEADERBOARD_TOP_N=100           # Traders to track
+LEADERBOARD_AUTO_COPY_TOP_N=10  # Top N to auto-copy
+DASHBOARD_PORT=8080
 ```
 
-4. Run:
+### Dashboard
+
+Built-in at http://localhost:8080 with:
+- Stats cards (trades, P&L, win rate)
+- Cumulative P&L chart
+- Daily P&L bar chart
+- Top traders table (sortable by PnL all-time/monthly/weekly, volume)
+- Recent trades with leader, side, status, P&L
+
+Auto-refreshes every 30 seconds.
+
+### Safety
+
+- DRY_RUN=true by default
+- Daily spending cap (COPY_MAX_DAILY_USD)
+- Per-trade size limit (COPY_SIZE_USD)
+- Your API key stays on your machine — never sent anywhere except Polymarket
+
+---
+
+## BTC Predictor
+
+Predicts Bitcoin's short-term direction using machine learning (XGBoost +
+RandomForest ensemble) trained on Binance price data. Bets on Polymarket
+"BTC Up or Down" markets when the model disagrees with the market price.
+
+**No LLM required.** All predictions are made by local ML models. Claude API
+is optional, only consulted for ambiguous high-stakes decisions.
+
+**No Binance API key required.** All market data is public.
+
+### How it works
 
 ```
-polymarket-trader.exe -mode=trader
+Binance US (free public data)
+     |
+  Fetch OHLCV candles (1m, 5m, 15m, 1h)
+     |
+  Compute 36 technical indicators
+  (RSI, MACD, Bollinger, ATR, OBV...)
+     |
+  XGBoost + RandomForest ensemble
+  predicts P(BTC goes UP)
+     |
+  If confidence > 15%: paper bet
+  If edge > 5% vs Polymarket: real bet
+     |
+  Auto-resolve after time window
+  Track P&L
+     |
+  Dashboard at http://localhost:8090
 ```
 
-5. Open http://localhost:8080 for the dashboard
-6. Watch paper results for a few days, then set `DRY_RUN=false` to go live
+### Quick start
+
+```bash
+# 1. Install Python dependencies
+pip install -r requirements.txt
+
+# 2. Configure
+cp .env.example .env
+
+# 3. Download 90 days of BTC data (~30 seconds)
+python -m btc_bot --deep-backfill 90
+
+# 4. Train ML models (~10 seconds)
+python -m btc_bot --train
+
+# 5. Start bot + dashboard
+python -m btc_bot --loop
+# Dashboard: http://localhost:8090
+```
+
+Pre-trained models are included — step 3-4 are optional (but recommended for
+fresh data).
 
 ### Commands
 
 ```
-polymarket-trader.exe -mode=trader                    Start bot + dashboard
-polymarket-trader.exe -mode=trader -once              Run one cycle
-polymarket-trader.exe -mode=trader -leaderboard-scan  Scan leaderboard only
-polymarket-trader.exe -mode=trader -status            Show status
+python -m btc_bot --deep-backfill 90   Download 90 days of Binance history
+python -m btc_bot --train              Train ML models
+python -m btc_bot --predict            Show current prediction
+python -m btc_bot --once               One full cycle
+python -m btc_bot --loop               Continuous trading + dashboard
+python -m btc_bot --status             Show status
+python -m btc_bot --backtest           Backtest on historical data
 ```
 
-### Safety Features
+### Configuration
 
-- **DRY_RUN=true** by default — no real money until you flip the switch
-- **Daily cap** — `COPY_MAX_DAILY_USD` stops the bot after spending $X/day
-- **Per-trade cap** — `COPY_SIZE_USD` controls individual trade size
-- **Your key stays local** — credentials never leave your machine
-- **Full audit trail** — every trade logged in local database
+```env
+BTC_BOT_DRY_RUN=true              # Paper trading
+BINANCE_BASE_URL=https://api.binance.us
+BTC_RETRAIN_HOUR=12               # Daily retrain at noon UTC
+BTC_MIN_EDGE_PCT=0.05             # 5% minimum edge
+BTC_MAX_POSITION_PER_MARKET_USD=100
+BTC_MAX_TOTAL_EXPOSURE_USD=500
+BTC_DASHBOARD_PORT=8090
+
+# Optional: Claude API for complex decisions
+# BTC_USE_CLAUDE_ADVISOR=true
+# ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### ML Model
+
+- **Features:** 36 technical indicators (trend, momentum, volatility, volume, microstructure)
+- **Models:** XGBoost (60% weight) + RandomForest (40% weight) ensemble
+- **Calibration:** Isotonic regression for well-calibrated probabilities
+- **Training data:** Binance US klines, auto-backfills up to years of history
+- **Retrain:** Daily at configurable hour (default 12:00 UTC)
+- **Performance:** 55-62% accuracy, AUC 0.60-0.65 (improves with more data)
+
+### Dashboard
+
+Built-in at http://localhost:8090 with:
+- BTC price + current direction + confidence
+- P(Up) probability chart over time
+- BTC price chart
+- ML model status (accuracy, AUC-ROC, Brier score)
+- Prediction stream
+- Trade history with P&L
+
+Auto-refreshes every 15 seconds.
 
 ---
 
-## Viewer Edition (US)
+## Topic Bet
 
-Research tool + paper trading simulator. See what top Polymarket traders are
-doing and track what your P&L would be if you followed them.
+Bet on **any topic** you choose. Specify topics in a comma-separated list,
+the bot searches Polymarket for matching markets and uses an LLM (Claude or
+GPT) to analyze each one and decide whether to bet.
 
-### Setup
+**Requires an LLM API key** (Anthropic or OpenAI).
 
-1. Download `polymarket-us.exe` and `.env`
-2. Run:
+### How it works
 
 ```
-polymarket-us.exe -mode=us
+You set: TOPICS=crude oil,gold,trump,inflation
+                    |
+Bot searches Polymarket for matching markets
+                    |
+    "Will gold hit $3000?"  YES=$0.42
+                    |
+LLM analyzes: probability=78%, confidence=72%
+                    |
+    Edge = 78% - 42% = 36%  →  BET YES $10
+                    |
+    Dashboard at http://localhost:8091
 ```
 
-3. Open http://localhost:8080 for the dashboard
+### Quick start
 
-That's it. No API key, no account needed.
+```bash
+# 1. Configure
+cp .env.example .env
+# Edit: add your ANTHROPIC_API_KEY and TOPICS
+
+# 2. Run
+topic-bot.exe -once      # one cycle
+topic-bot.exe            # continuous loop
+# Dashboard: http://localhost:8091
+```
 
 ### Commands
 
 ```
-polymarket-us.exe -mode=us                    Start bot + dashboard
-polymarket-us.exe -mode=us -once              Run one cycle
-polymarket-us.exe -mode=us -leaderboard-scan  Pull latest leaderboard
-polymarket-us.exe -mode=us -status            Show status
+topic-bot -once       One cycle (scan + analyze + trade)
+topic-bot             Continuous loop (every 5 min)
+topic-bot -scan       Scan markets only (no LLM, no trading)
+topic-bot -status     Show status
 ```
 
+### Configuration
+
+```env
+# What to bet on
+TOPICS=crude oil,gold,bitcoin,trump,fed rate,inflation
+
+# LLM (required)
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+
+# Or use OpenAI:
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=sk-...
+# OPENAI_MODEL=gpt-4o-mini
+
+# Trading
+DRY_RUN=true               # Paper trading
+BET_SIZE_USD=10             # $ per bet
+MAX_DAILY_USD=200           # Daily cap
+MIN_CONFIDENCE=60           # LLM must be 60%+ confident
+LOOP_INTERVAL_SEC=300       # 5 min between cycles
+DASHBOARD_PORT=8091
+```
+
+### Topic examples
+
+```
+crude oil, WTI, brent       Oil/energy markets
+gold, silver                Precious metals
+bitcoin, ethereum           Crypto
+trump, biden, election      Politics
+fed rate, inflation, CPI    Economics/macro
+ukraine, china, taiwan      Geopolitics
+super bowl, world cup       Sports
+oscars, grammy              Entertainment
+```
+
+The bot automatically expands topics with search variations (e.g., "crude oil"
+also searches "oil price", "WTI", "brent").
+
+### How the LLM decides
+
+For each market, the bot asks the LLM:
+
+> Market: "Will gold hit $3000 by June 2026?"
+> YES=$0.42, NO=$0.58
+>
+> Should I bet? Respond with recommendation, probability, confidence, reasoning.
+
+The LLM only recommends betting when:
+- Confidence >= 60%
+- Edge >= 5% over market price
+
+Most markets get **SKIP** — the LLM correctly identifies when it lacks
+enough information.
+
+### LLM cost
+
+| Interval | Markets/cycle | Cost/cycle | Daily cost |
+|---|---|---|---|
+| 5 min | ~10 | ~$0.10 | ~$29 |
+| 15 min | ~10 | ~$0.10 | ~$10 |
+| 1 hour | ~10 | ~$0.10 | ~$2.40 |
+
+Adjust `LOOP_INTERVAL_SEC` to control cost.
+
+### Dashboard
+
+Built-in at http://localhost:8091 with:
+- Stats (topics, markets, analyses, trades, P&L, win rate)
+- LLM analyses table (recommendation, probability, confidence, reasoning)
+- Trades table (side, size, edge, status, P&L)
+- Discovered markets by topic
+
+Auto-refreshes every 15 seconds.
+
 ---
 
-## Dashboard
+## Common Features
 
-Both editions include a built-in web dashboard at http://localhost:8080.
+All three bots share:
 
-**What you see:**
-
-- **Stats cards** — total trades, open positions, P&L, win rate
-- **Cumulative P&L chart** — your equity curve over time
-- **Daily P&L bars** — green and red bars showing daily performance
-- **Top traders table** — leaderboard with PnL, volume, sortable by time period
-- **Recent trades** — every copy trade with market, side, price, status, P&L
-
-Auto-refreshes every 30 seconds. Dark theme.
-
----
-
-## Configuration Reference
-
-### All Editions
-
-| Variable | Default | Description |
-|---|---|---|
-| `DRY_RUN` | `true` | Paper trading mode. Set `false` for real trades (Trader only) |
-| `DB_PATH` | `copytrader.db` | Local SQLite database file |
-| `COPY_SIZE_USD` | `10.0` | USD amount per copy trade |
-| `COPY_MAX_DAILY_USD` | `500.0` | Maximum daily copy trading spend |
-| `LOOP_INTERVAL_SEC` | `60` | Seconds between trade scan cycles |
-| `RESOLVE_INTERVAL` | `10` | Check market resolutions every N cycles |
-| `DASHBOARD_PORT` | `8080` | HTTP port for the dashboard |
-| `LEADERBOARD_TOP_N` | `100` | Number of traders to track per ranking |
-| `LEADERBOARD_AUTO_COPY_TOP_N` | `10` | Top N traders to auto-copy |
-| `LOG_LEVEL` | `info` | Log verbosity: debug, info, warn, error |
-
-### Trader Edition Only
-
-| Variable | Default | Description |
-|---|---|---|
-| `POLY_API_KEY` | *(empty)* | Your Polymarket API key |
-| `POLY_API_SECRET` | *(empty)* | Your Polymarket API secret |
-| `POLY_PASSPHRASE` | *(empty)* | Your Polymarket API passphrase |
-
----
-
-## FAQ
-
-**Q: Is this safe to use?**
-A: The bot starts in DRY_RUN mode — no real money is used until you explicitly
-change `DRY_RUN=false`. Even then, daily spending is capped.
-
-**Q: Where are my credentials stored?**
-A: In the `.env` file on your local machine. They are never sent anywhere
-except directly to Polymarket's API when placing orders.
-
-**Q: What happens if my internet drops?**
-A: The bot retries on the next cycle. No trades are placed during downtime.
-Your local SQLite database preserves all state.
-
-**Q: Can I change which traders I follow?**
-A: The bot automatically selects the top 10 by all-time profit. Change
-`LEADERBOARD_AUTO_COPY_TOP_N` to follow more or fewer traders.
-
-**Q: How is P&L calculated?**
-A: When a market resolves, the bot calculates profit/loss based on entry
-price vs outcome. Daily and cumulative P&L are tracked automatically.
-
-**Q: Why can't US users trade?**
-A: Polymarket Global is not available to US residents due to CFTC regulations.
-The Viewer Edition gives you the research and paper trading experience.
-
-**Q: Do I need to keep the bot running 24/7?**
-A: For best results, yes. The bot picks up leader trades as they happen.
-If you stop and restart, it will catch up on any trades it missed.
-
----
+- **DRY_RUN=true by default** — no real money until you flip the switch
+- **Built-in web dashboard** — no separate frontend needed
+- **SQLite local storage** — all data stays on your machine
+- **No installation** — single binary (Go) or pip install (Python)
+- **Auto-refresh dashboards** — 15-30 second update cycles
 
 ## System Requirements
 
 - Windows 10/11 (64-bit) or Linux (64-bit)
 - Internet connection
-- ~50MB disk space
-- No other software required — single self-contained binary
+- ~50 MB disk space
+- BTC Predictor: Python 3.10+ with scikit-learn, xgboost, pandas
+- Topic Bet: LLM API key (Anthropic ~$5/mo or OpenAI)
 
----
+## Disclaimer
 
-## Files
-
-Each edition is a single `.exe` (or Linux binary) plus a `.env` config file.
-No installation needed — just download and run.
-
-| File | Size | What it is |
-|---|---|---|
-| `polymarket-trader.exe` | 11 MB | Trader Edition (Windows) |
-| `polymarket-trader-linux` | 11 MB | Trader Edition (Linux) |
-| `polymarket-us.exe` | 11 MB | Viewer Edition (Windows) |
-| `.env` | 1 KB | Configuration (edit this) |
+These bots are for educational and research purposes. Prediction markets
+carry financial risk — you can lose money. Start with DRY_RUN=true. You are
+responsible for your own trading decisions and compliance with local regulations.
