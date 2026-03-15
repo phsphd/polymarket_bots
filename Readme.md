@@ -963,7 +963,7 @@ Next.js web dashboard showing portfolio, leaderboard, and copy trade data. Deplo
 
 ```bash
 cd dashboard && npm install && npm run dev
-# http://localhost:3000
+# http://localhost:5000
 ```
 
 **Pages:**
